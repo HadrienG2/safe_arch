@@ -132,6 +132,68 @@ use core::{
 
 pub mod naming_conventions;
 
+/// Wrap a single intrinsic function
+#[doc(hidden)]
+#[macro_export]
+macro_rules! wrap_instruction {
+    // The "passthrough" code generator passes input parameters of the wrapper
+    // directly to the intrinsic function that was passed as a parameter
+    (
+      #$attrs:tt passthrough(
+        $name:ident( $( $params:ident : $types:ty ),* ) $( -> $result:ident )? ,
+        $intrinsic:path
+      )
+    ) => {
+      wrap_instruction!{
+        #$attrs implement(
+          $name( $( $params : $types ),* ) $( -> $result )?,
+          { unsafe { $intrinsic( $( $params ),* ) } }
+        )
+      }
+    };
+
+    // Final code generator, run after the function body has been generated
+    (
+      #[$($attrs:meta),+]
+      implement(
+        $name:ident $params:tt $( -> $resty:ident )?,
+        $body:tt
+      )
+    ) => {
+        $(#[$attrs])+
+        pub fn $name $params $( -> $resty )? $body
+    };
+}
+
+/// Wrap an entire instruction set
+///
+/// Wrap a set of instructions by calling wrap_instruction on each of them,
+/// adding inline(always) and doc(cfg()) attributes to each of them.
+///
+#[doc(hidden)]
+#[macro_export]
+macro_rules! wrap_instruction_set {
+    (
+      $feature:literal => {
+        $(
+          $(#[$attr:meta])*
+          $generator:ident $parameters:tt
+        )*
+      }
+    ) => {
+      $(
+        $crate::wrap_instruction!{
+          #[
+            inline(always),
+            cfg_attr(docs_rs, doc(cfg(target_feature = $feature))),
+            $($attr),*
+          ]
+          $generator $parameters
+        }
+      )*
+    };
+}
+
 /// Declares a private mod and then a glob `use` with the visibility specified.
 macro_rules! submodule {
   ($v:vis $name:ident) => {
